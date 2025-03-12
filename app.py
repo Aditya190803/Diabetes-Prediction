@@ -22,9 +22,14 @@ NORMAL_RANGES = {
     "Age": "20-80 years"
 }
 
-data = pd.read_csv(DATA_URL, names=COLUMN_NAMES)
-X = data.drop(columns=["Outcome"])
-y = data["Outcome"]
+@st.cache_resource
+def load_data():
+    data = pd.read_csv(DATA_URL, names=COLUMN_NAMES)
+    X = data.drop(columns=["Outcome"])
+    y = data["Outcome"]
+    return X, y
+
+X, y = load_data()
 
 # Split data
 from sklearn.model_selection import train_test_split
@@ -40,26 +45,30 @@ X_test = scaler.transform(X_test)
 with open("scaler.pkl", "wb") as f:
     pickle.dump(scaler, f)
 
-# Check if model exists
-MODEL_PATH = "diabetes_ann_model.h5"
-if os.path.exists(MODEL_PATH):
-    model = load_model(MODEL_PATH)
-else:
-    # Build ANN model
-    model = Sequential([
-        Dense(16, activation='relu', input_shape=(X_train.shape[1],)),
-        Dense(8, activation='relu'),
-        Dense(1, activation='sigmoid')
-    ])
+@st.cache_resource
+def load_model_file():
+    MODEL_PATH = "diabetes_ann_model.h5"
+    if os.path.exists(MODEL_PATH):
+        return load_model(MODEL_PATH)
+    else:
+        # Build ANN model
+        model = Sequential([
+            Dense(16, activation='relu', input_shape=(X_train.shape[1],)),
+            Dense(8, activation='relu'),
+            Dense(1, activation='sigmoid')
+        ])
 
-    # Compile model
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        # Compile model
+        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-    # Train model
-    model.fit(X_train, y_train, epochs=50, batch_size=10, validation_data=(X_test, y_test))
+        # Train model
+        model.fit(X_train, y_train, epochs=50, batch_size=10, validation_data=(X_test, y_test))
 
-    # Save model
-    model.save(MODEL_PATH)
+        # Save model
+        model.save(MODEL_PATH)
+        return model
+
+model = load_model_file()
 
 # Load scaler
 with open("scaler.pkl", "rb") as f:
@@ -74,10 +83,26 @@ st.sidebar.header("Normal Ranges")
 for feature, value in NORMAL_RANGES.items():
     st.sidebar.write(f"**{feature}:** {value}")
 
+# Initialize session state for inputs
+if "inputs" not in st.session_state:
+    st.session_state.inputs = {
+        "Pregnancies": "0",
+        "Glucose": "100",
+        "BloodPressure": "80",
+        "SkinThickness": "20",
+        "Insulin": "30",
+        "BMI": "22",
+        "DiabetesPedigreeFunction": "0.5",
+        "Age": "30"
+    }
+
 # Improved Input fields with text boxes
 data_input = []
 for feature in COLUMN_NAMES[:-1]:  # Exclude Outcome
-    data_input.append(st.text_input(f"{feature}", "0"))
+    st.session_state.inputs[feature] = st.text_input(
+        f"{feature}", st.session_state.inputs[feature]
+    )
+    data_input.append(st.session_state.inputs[feature])
 
 # Predict button
 if st.button("Predict"):
@@ -86,6 +111,6 @@ if st.button("Predict"):
         input_data = scaler.transform(input_data)  # Normalize
         prediction = model.predict(input_data)[0][0]
         result = "Diabetic" if prediction > 0.5 else "Non-Diabetic"
-        st.success(f"Prediction: {result} (Confidence: {prediction:.2f})")
+        st.success(f"Prediction: {result}")
     except ValueError:
         st.error("Please enter valid numerical values.")
